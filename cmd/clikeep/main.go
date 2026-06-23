@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"os"
-	"path/filepath"
 
 	"github.com/scott9/clikeep/internal/cli"
 	"github.com/scott9/clikeep/internal/paths"
@@ -15,7 +14,7 @@ func main() {
 		Stdin:      os.Stdin,
 		Stdout:     os.Stdout,
 		Stderr:     os.Stderr,
-		ConfigHome: filepath.Dir(p.ConfigFile),
+		ConfigHome: p.ConfigFile,
 		StateHome:  p.StateDir,
 	})
 	os.Exit(code)

@@ -7,9 +7,10 @@ import (
 )
 
 type Deps struct {
-	Stdin       io.Reader
-	Stdout      io.Writer
-	Stderr      io.Writer
+	Stdin  io.Reader
+	Stdout io.Writer
+	Stderr io.Writer
+	// ConfigHome is the config file path used by the CLI.
 	ConfigHome  string
 	StateHome   string
 	StdoutIsTTY bool
