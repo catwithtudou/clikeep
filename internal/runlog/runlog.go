@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -35,4 +36,27 @@ func WriteSummary(stateDir string, summary Summary) error {
 		return err
 	}
 	return os.WriteFile(filepath.Join(stateDir, "latest-run"), []byte(summary.RunID), 0o644)
+}
+
+func ReadLatest(stateDir string) (Summary, bool, error) {
+	var summary Summary
+	data, err := os.ReadFile(filepath.Join(stateDir, "latest-run"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return summary, false, nil
+		}
+		return summary, false, err
+	}
+	runID := strings.TrimSpace(string(data))
+	if runID == "" {
+		return summary, false, nil
+	}
+	summaryData, err := os.ReadFile(filepath.Join(stateDir, "runs", runID, "run-summary.json"))
+	if err != nil {
+		return summary, false, err
+	}
+	if err := json.Unmarshal(summaryData, &summary); err != nil {
+		return summary, false, err
+	}
+	return summary, true, nil
 }

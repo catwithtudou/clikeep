@@ -27,6 +27,23 @@ func TestRunUnknownCommand(t *testing.T) {
 	}
 }
 
+func TestRunUsageListsSupportedCommands(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run(context.Background(), nil, Deps{
+		Stdout: &stdout,
+		Stderr: &stderr,
+	})
+
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	for _, want := range []string{"init", "add", "list", "up", "status", "doctor"} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Fatalf("stderr = %q, missing %q", stderr.String(), want)
+		}
+	}
+}
+
 func TestInitCreatesEmptyConfig(t *testing.T) {
 	dir := t.TempDir()
 	configFile := filepath.Join(dir, "config.toml")
@@ -274,5 +291,75 @@ func TestUpWithYesJSONWritesRunSummary(t *testing.T) {
 	}
 	if _, err := os.Stat(decoded.Results[0].LogPath); err != nil {
 		t.Fatalf("log path missing: %v", err)
+	}
+}
+
+func TestUpWithYesTextUsesStagedOutput(t *testing.T) {
+	dir := t.TempDir()
+	configFile := filepath.Join(dir, "config.toml")
+	cfg := profile.Config{Tools: []profile.Profile{{
+		Name:      "echo",
+		Enabled:   true,
+		Confirmed: true,
+		Update:    profile.Command{Command: "echo", Args: []string{"update"}},
+	}}}
+	if err := profile.Save(configFile, cfg); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run(context.Background(), []string{"up", "--yes"}, Deps{
+		Stdout:     &stdout,
+		Stderr:     &stderr,
+		ConfigHome: configFile,
+		StateHome:  filepath.Join(dir, "state"),
+	})
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr = %s", code, stderr.String())
+	}
+	out := stdout.String()
+	for _, want := range []string{"Plan", "Run", "Summary", "echo", "success"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output = %q, missing %q", out, want)
+		}
+	}
+}
+
+func TestStatusShowsConfiguredProfileAndLatestResult(t *testing.T) {
+	dir := t.TempDir()
+	configFile := filepath.Join(dir, "config.toml")
+	stateDir := filepath.Join(dir, "state")
+	cfg := profile.Config{Tools: []profile.Profile{{
+		Name:      "echo",
+		Enabled:   true,
+		Confirmed: true,
+		Update:    profile.Command{Command: "echo", Args: []string{"update"}},
+	}}}
+	if err := profile.Save(configFile, cfg); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	deps := Deps{
+		Stdout:     &stdout,
+		Stderr:     &stderr,
+		ConfigHome: configFile,
+		StateHome:  stateDir,
+	}
+	if code := Run(context.Background(), []string{"up", "--yes", "--json"}, deps); code != 0 {
+		t.Fatalf("up exit code = %d stderr=%s", code, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code := Run(context.Background(), []string{"status"}, deps)
+	if code != 0 {
+		t.Fatalf("status exit code = %d stderr=%s", code, stderr.String())
+	}
+	out := stdout.String()
+	for _, want := range []string{"echo", "enabled=true", "confirmed=true", "success", ".log"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("status output = %q, missing %q", out, want)
+		}
 	}
 }

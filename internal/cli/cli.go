@@ -31,7 +31,7 @@ type Deps struct {
 
 func Run(ctx context.Context, args []string, deps Deps) int {
 	if len(args) == 0 {
-		fmt.Fprintln(deps.Stderr, "usage: clikeep <command>")
+		printUsage(deps.Stderr)
 		return 2
 	}
 
@@ -47,12 +47,16 @@ func Run(ctx context.Context, args []string, deps Deps) int {
 	case "up":
 		return runUp(ctx, args[1:], deps)
 	case "status":
-		fmt.Fprintf(deps.Stderr, "%s is not implemented yet\n", args[0])
-		return 2
+		return runStatus(args[1:], deps)
 	default:
 		fmt.Fprintf(deps.Stderr, "unknown command: %s\n", args[0])
 		return 2
 	}
+}
+
+func printUsage(w io.Writer) {
+	fmt.Fprintln(w, "usage: clikeep <command>")
+	fmt.Fprintln(w, "commands: init, add, list, up, status, doctor")
 }
 
 func runInit(deps Deps) int {
@@ -262,6 +266,9 @@ func runUp(ctx context.Context, args []string, deps Deps) int {
 			return 1
 		}
 	}
+	if !opts.json {
+		fmt.Fprintln(deps.Stdout, "Run")
+	}
 
 	summary, err := executor.Run(ctx, plan, executor.Options{
 		StateDir: deps.StateHome,
@@ -282,6 +289,64 @@ func runUp(ctx context.Context, args []string, deps Deps) int {
 	}
 	if summaryHasFailure(summary) {
 		return 1
+	}
+	return 0
+}
+
+func runStatus(args []string, deps Deps) int {
+	if len(args) > 1 {
+		fmt.Fprintln(deps.Stderr, "usage: clikeep status [name]")
+		return 2
+	}
+	var name string
+	if len(args) == 1 {
+		name = args[0]
+	}
+
+	cfg, err := profile.Load(deps.ConfigHome)
+	if err != nil {
+		fmt.Fprintf(deps.Stderr, "load config: %v\n", err)
+		return 1
+	}
+	if problems := profile.ValidateConfig(cfg); len(problems) > 0 {
+		printProblems(problems, deps.Stderr)
+		return 2
+	}
+	latest, hasLatest, err := runlog.ReadLatest(deps.StateHome)
+	if err != nil {
+		fmt.Fprintf(deps.Stderr, "read latest run: %v\n", err)
+		return 1
+	}
+	results := make(map[string]runlog.Result, len(latest.Results))
+	if hasLatest {
+		for _, result := range latest.Results {
+			results[result.Name] = result
+		}
+	}
+
+	found := false
+	for _, tool := range cfg.Tools {
+		if name != "" && tool.Name != name {
+			continue
+		}
+		found = true
+		result, ok := results[tool.Name]
+		latestStatus := "none"
+		logPath := ""
+		if ok {
+			latestStatus = result.Status
+			logPath = result.LogPath
+		}
+		fmt.Fprintf(deps.Stdout, "%s\tenabled=%t\tconfirmed=%t\tlatest=%s",
+			tool.Name, tool.Enabled, tool.Confirmed, latestStatus)
+		if logPath != "" {
+			fmt.Fprintf(deps.Stdout, "\tlog=%s", logPath)
+		}
+		fmt.Fprintln(deps.Stdout)
+	}
+	if name != "" && !found {
+		fmt.Fprintf(deps.Stderr, "profile not found: %s\n", name)
+		return 2
 	}
 	return 0
 }
@@ -318,6 +383,8 @@ func parseUpArgs(args []string, stderr io.Writer) (upOptions, bool) {
 			opts.dryRun = true
 		case "--json":
 			opts.json = true
+		case "--no-color":
+			// Output is currently plain text, but accepting the flag keeps scripts stable.
 		case "--yes":
 			opts.yes = true
 		case "--fail-fast":
@@ -377,8 +444,42 @@ func writeRunSummaryText(w io.Writer, summary runlog.Summary) error {
 		if _, err := fmt.Fprintln(w, line); err != nil {
 			return err
 		}
+		if result.Status == "failed" {
+			if result.Error != "" {
+				if _, err := fmt.Fprintf(w, "  error: %s\n", result.Error); err != nil {
+					return err
+				}
+			}
+			tail, err := readTail(result.LogPath, 20)
+			if err == nil && len(tail) > 0 {
+				if _, err := fmt.Fprintln(w, "  tail:"); err != nil {
+					return err
+				}
+				for _, tailLine := range tail {
+					if _, err := fmt.Fprintf(w, "    %s\n", tailLine); err != nil {
+						return err
+					}
+				}
+			}
+		}
 	}
 	return nil
+}
+
+func readTail(path string, maxLines int) ([]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	text := strings.TrimRight(string(data), "\n")
+	if text == "" {
+		return nil, nil
+	}
+	lines := strings.Split(text, "\n")
+	if len(lines) <= maxLines {
+		return lines, nil
+	}
+	return lines[len(lines)-maxLines:], nil
 }
 
 func summaryHasFailure(summary runlog.Summary) bool {
