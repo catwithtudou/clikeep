@@ -129,3 +129,31 @@ func TestAddRejectsDuplicateProfileName(t *testing.T) {
 		t.Fatal("duplicate add succeeded, want failure")
 	}
 }
+
+func TestDoctorReportsMissingUpdateCommand(t *testing.T) {
+	dir := t.TempDir()
+	configFile := filepath.Join(dir, "config.toml")
+	cfg := profile.Config{Tools: []profile.Profile{{
+		Name:      "missing",
+		Enabled:   true,
+		Confirmed: true,
+		Update:    profile.Command{Command: "clikeep-definitely-missing-cli", Args: []string{"update"}},
+	}}}
+	if err := profile.Save(configFile, cfg); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run(context.Background(), []string{"doctor"}, Deps{
+		Stdout:     &stdout,
+		Stderr:     &stderr,
+		ConfigHome: configFile,
+		StateHome:  filepath.Join(dir, "state"),
+	})
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1; stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "update command not found") {
+		t.Fatalf("stderr = %q, want missing command problem", stderr.String())
+	}
+}

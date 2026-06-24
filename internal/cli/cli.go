@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/scott9/clikeep/internal/paths"
+	"github.com/scott9/clikeep/internal/planner"
 	"github.com/scott9/clikeep/internal/profile"
 )
 
@@ -39,7 +41,9 @@ func Run(ctx context.Context, args []string, deps Deps) int {
 		return runAdd(args[1:], deps)
 	case "list":
 		return runList(deps)
-	case "up", "status", "doctor":
+	case "doctor":
+		return runDoctor(deps)
+	case "up", "status":
 		fmt.Fprintf(deps.Stderr, "%s is not implemented yet\n", args[0])
 		return 2
 	default:
@@ -189,6 +193,24 @@ func runList(deps Deps) int {
 	return 0
 }
 
+func runDoctor(deps Deps) int {
+	cfg, err := profile.Load(deps.ConfigHome)
+	if err != nil {
+		fmt.Fprintf(deps.Stderr, "load config: %v\n", err)
+		return 1
+	}
+	problems := planner.Doctor(cfg, cliPaths(deps))
+	if len(problems) == 0 {
+		fmt.Fprintln(deps.Stdout, "doctor ok")
+		return 0
+	}
+	printProblems(problems, deps.Stderr)
+	if hasError(problems) {
+		return 1
+	}
+	return 0
+}
+
 func confirmAdd(name string, update profile.Command, deps Deps) (bool, error) {
 	if !deps.StdinIsTTY {
 		return false, errors.New("add requires --yes when stdin is non-interactive")
@@ -212,5 +234,23 @@ func printProblems(problems []profile.Problem, w io.Writer) {
 			continue
 		}
 		fmt.Fprintf(w, "%s: %s: %s\n", problem.Severity, problem.Tool, problem.Message)
+	}
+}
+
+func hasError(problems []profile.Problem) bool {
+	for _, problem := range problems {
+		if problem.Severity == "error" {
+			return true
+		}
+	}
+	return false
+}
+
+func cliPaths(deps Deps) paths.Paths {
+	return paths.Paths{
+		ConfigFile: deps.ConfigHome,
+		StateDir:   deps.StateHome,
+		RunsDir:    filepath.Join(deps.StateHome, "runs"),
+		LatestFile: filepath.Join(deps.StateHome, "latest-run"),
 	}
 }
