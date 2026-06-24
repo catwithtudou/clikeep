@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/scott9/clikeep/internal/output"
 	"github.com/scott9/clikeep/internal/paths"
 	"github.com/scott9/clikeep/internal/planner"
 	"github.com/scott9/clikeep/internal/profile"
@@ -27,8 +28,6 @@ type Deps struct {
 }
 
 func Run(ctx context.Context, args []string, deps Deps) int {
-	_ = ctx
-
 	if len(args) == 0 {
 		fmt.Fprintln(deps.Stderr, "usage: clikeep <command>")
 		return 2
@@ -43,7 +42,9 @@ func Run(ctx context.Context, args []string, deps Deps) int {
 		return runList(deps)
 	case "doctor":
 		return runDoctor(deps)
-	case "up", "status":
+	case "up":
+		return runUp(ctx, args[1:], deps)
+	case "status":
 		fmt.Fprintf(deps.Stderr, "%s is not implemented yet\n", args[0])
 		return 2
 	default:
@@ -211,6 +212,42 @@ func runDoctor(deps Deps) int {
 	return 0
 }
 
+func runUp(ctx context.Context, args []string, deps Deps) int {
+	_ = ctx
+
+	opts, ok := parseUpArgs(args, deps.Stderr)
+	if !ok {
+		return 2
+	}
+	if !opts.dryRun {
+		fmt.Fprintln(deps.Stderr, "up requires --dry-run until execution is implemented")
+		return 2
+	}
+
+	plan, problems, err := buildPlan(deps, opts.names)
+	if err != nil {
+		fmt.Fprintf(deps.Stderr, "load config: %v\n", err)
+		return 1
+	}
+	if len(problems) > 0 {
+		printProblems(problems, deps.Stderr)
+		return 2
+	}
+
+	if opts.json {
+		if err := output.WriteJSON(deps.Stdout, plan); err != nil {
+			fmt.Fprintf(deps.Stderr, "write json: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if err := output.WritePlanText(deps.Stdout, plan, deps.StdoutIsTTY); err != nil {
+		fmt.Fprintf(deps.Stderr, "write plan: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
 func confirmAdd(name string, update profile.Command, deps Deps) (bool, error) {
 	if !deps.StdinIsTTY {
 		return false, errors.New("add requires --yes when stdin is non-interactive")
@@ -225,6 +262,43 @@ func confirmAdd(name string, update profile.Command, deps Deps) (bool, error) {
 	}
 	answer = strings.TrimSpace(strings.ToLower(answer))
 	return answer == "y" || answer == "yes", nil
+}
+
+type upOptions struct {
+	dryRun bool
+	json   bool
+	names  []string
+}
+
+func parseUpArgs(args []string, stderr io.Writer) (upOptions, bool) {
+	var opts upOptions
+	for _, arg := range args {
+		switch arg {
+		case "--dry-run":
+			opts.dryRun = true
+		case "--json":
+			opts.json = true
+		default:
+			if strings.HasPrefix(arg, "-") {
+				fmt.Fprintf(stderr, "unknown up option: %s\n", arg)
+				return upOptions{}, false
+			}
+			opts.names = append(opts.names, arg)
+		}
+	}
+	return opts, true
+}
+
+func buildPlan(deps Deps, names []string) (planner.Plan, []profile.Problem, error) {
+	cfg, err := profile.Load(deps.ConfigHome)
+	if err != nil {
+		return planner.Plan{}, nil, err
+	}
+	if problems := profile.ValidateConfig(cfg); len(problems) > 0 {
+		return planner.Plan{}, problems, nil
+	}
+	plan, problems := planner.Build(cfg, names, planner.Options{})
+	return plan, problems, nil
 }
 
 func printProblems(problems []profile.Problem, w io.Writer) {

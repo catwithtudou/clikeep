@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -155,5 +156,45 @@ func TestDoctorReportsMissingUpdateCommand(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "update command not found") {
 		t.Fatalf("stderr = %q, want missing command problem", stderr.String())
+	}
+}
+
+func TestUpDryRunJSONDoesNotCreateRunDir(t *testing.T) {
+	dir := t.TempDir()
+	configFile := filepath.Join(dir, "config.toml")
+	stateDir := filepath.Join(dir, "state")
+	cfg := profile.Config{Tools: []profile.Profile{{
+		Name:      "echo",
+		Enabled:   true,
+		Confirmed: true,
+		Update:    profile.Command{Command: "echo", Args: []string{"update"}},
+	}}}
+	if err := profile.Save(configFile, cfg); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run(context.Background(), []string{"up", "--dry-run", "--json"}, Deps{
+		Stdout:     &stdout,
+		Stderr:     &stderr,
+		ConfigHome: configFile,
+		StateHome:  stateDir,
+	})
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr = %s", code, stderr.String())
+	}
+	var decoded struct {
+		Items []struct {
+			Name string `json:"name"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &decoded); err != nil {
+		t.Fatalf("invalid json output %q: %v", stdout.String(), err)
+	}
+	if len(decoded.Items) != 1 || decoded.Items[0].Name != "echo" {
+		t.Fatalf("json output = %s, want echo plan item", stdout.String())
+	}
+	if _, err := os.Stat(filepath.Join(stateDir, "runs")); !os.IsNotExist(err) {
+		t.Fatalf("dry-run created runs dir or unexpected stat error: %v", err)
 	}
 }
