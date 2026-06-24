@@ -2,6 +2,7 @@ package profile
 
 import (
 	"errors"
+	"path/filepath"
 	"strings"
 
 	"github.com/google/shlex"
@@ -20,8 +21,11 @@ func ParseCommand(input string) (Command, error) {
 	if len(parts) == 0 {
 		return Command{}, errors.New("command is empty")
 	}
+	if isUnsafeExecutable(parts[0]) {
+		return Command{}, errors.New("unsupported command executable")
+	}
 	for _, part := range parts {
-		if isUnsafeToken(part) {
+		if containsShellSyntax(part) {
 			return Command{}, errors.New("unsupported shell syntax in command")
 		}
 	}
@@ -35,13 +39,23 @@ func RenderCommand(cmd Command) string {
 	return cmd.Command + " " + strings.Join(cmd.Args, " ")
 }
 
-func isUnsafeToken(token string) bool {
+func isUnsafeExecutable(command string) bool {
+	switch filepath.Base(command) {
+	case "sudo", "sh", "bash", "zsh", "fish":
+		return true
+	default:
+		return false
+	}
+}
+
+func containsShellSyntax(token string) bool {
 	switch token {
-	case "sudo", "sh", "bash", "zsh", "fish", "&&", "||", "|", ">", ">>", "<", "$(", "`":
+	case "&&", "||", "|", ">", ">>", "<", ";":
 		return true
 	default:
 		return strings.Contains(token, "$(") || strings.Contains(token, "`") ||
 			strings.Contains(token, "&&") || strings.Contains(token, "||") ||
-			strings.Contains(token, "|") || strings.Contains(token, ">") || strings.Contains(token, "<")
+			strings.Contains(token, "|") || strings.Contains(token, ">") ||
+			strings.Contains(token, "<") || strings.Contains(token, ";")
 	}
 }

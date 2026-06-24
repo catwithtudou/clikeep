@@ -13,13 +13,14 @@ type Config struct {
 }
 
 type Profile struct {
-	Name      string   `toml:"name"`
-	Enabled   bool     `toml:"enabled"`
-	Confirmed bool     `toml:"confirmed"`
-	Aliases   []string `toml:"aliases,omitempty"`
-	Tags      []string `toml:"tags,omitempty"`
-	Update    Command  `toml:"update"`
-	Version   *Command `toml:"version,omitempty"`
+	Name      string            `toml:"name"`
+	Enabled   bool              `toml:"enabled"`
+	Confirmed bool              `toml:"confirmed"`
+	Aliases   []string          `toml:"aliases,omitempty"`
+	Tags      []string          `toml:"tags,omitempty"`
+	Env       map[string]string `toml:"env,omitempty"`
+	Update    Command           `toml:"update"`
+	Version   *Command          `toml:"version,omitempty"`
 }
 
 type Problem struct {
@@ -74,8 +75,15 @@ func ValidateConfig(cfg Config) []Problem {
 		}
 		if tool.Update.Command == "" {
 			problems = append(problems, Problem{Tool: tool.Name, Severity: "error", Message: "update command is required"})
+		} else {
+			problems = append(problems, validateCommand(tool.Name, "update", tool.Update)...)
 		}
-		problems = append(problems, validateCommand(tool.Name, "update", tool.Update)...)
+		if len(tool.Update.Args) == 0 {
+			problems = append(problems, Problem{Tool: tool.Name, Severity: "error", Message: "update args are required"})
+		}
+		if len(tool.Env) > 0 {
+			problems = append(problems, Problem{Tool: tool.Name, Severity: "error", Message: "profile env is unsupported"})
+		}
 		if tool.Version != nil {
 			problems = append(problems, validateCommand(tool.Name, "version", *tool.Version)...)
 		}
@@ -88,13 +96,8 @@ func validateCommand(tool, field string, cmd Command) []Problem {
 	if cmd.Command == "" {
 		return []Problem{{Tool: tool, Severity: "error", Message: field + " command is required"}}
 	}
-	if isUnsafeToken(cmd.Command) {
+	if isUnsafeExecutable(cmd.Command) {
 		return []Problem{{Tool: tool, Severity: "error", Message: field + " command is unsafe"}}
-	}
-	for _, arg := range cmd.Args {
-		if isUnsafeToken(arg) {
-			return []Problem{{Tool: tool, Severity: "error", Message: field + " args contain unsupported shell syntax"}}
-		}
 	}
 	return nil
 }
