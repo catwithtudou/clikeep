@@ -10,10 +10,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/scott9/clikeep/internal/executor"
 	"github.com/scott9/clikeep/internal/output"
 	"github.com/scott9/clikeep/internal/paths"
 	"github.com/scott9/clikeep/internal/planner"
 	"github.com/scott9/clikeep/internal/profile"
+	"github.com/scott9/clikeep/internal/runlog"
 )
 
 type Deps struct {
@@ -213,14 +215,8 @@ func runDoctor(deps Deps) int {
 }
 
 func runUp(ctx context.Context, args []string, deps Deps) int {
-	_ = ctx
-
 	opts, ok := parseUpArgs(args, deps.Stderr)
 	if !ok {
-		return 2
-	}
-	if !opts.dryRun {
-		fmt.Fprintln(deps.Stderr, "up requires --dry-run until execution is implemented")
 		return 2
 	}
 
@@ -234,15 +230,57 @@ func runUp(ctx context.Context, args []string, deps Deps) int {
 		return 2
 	}
 
-	if opts.json {
-		if err := output.WriteJSON(deps.Stdout, plan); err != nil {
-			fmt.Fprintf(deps.Stderr, "write json: %v\n", err)
+	if opts.dryRun {
+		if opts.json {
+			if err := output.WriteJSON(deps.Stdout, plan); err != nil {
+				fmt.Fprintf(deps.Stderr, "write json: %v\n", err)
+				return 1
+			}
+			return 0
+		}
+		if err := output.WritePlanText(deps.Stdout, plan, deps.StdoutIsTTY); err != nil {
+			fmt.Fprintf(deps.Stderr, "write plan: %v\n", err)
 			return 1
 		}
 		return 0
 	}
-	if err := output.WritePlanText(deps.Stdout, plan, deps.StdoutIsTTY); err != nil {
-		fmt.Fprintf(deps.Stderr, "write plan: %v\n", err)
+
+	if !opts.json {
+		if err := output.WritePlanText(deps.Stdout, plan, deps.StdoutIsTTY); err != nil {
+			fmt.Fprintf(deps.Stderr, "write plan: %v\n", err)
+			return 1
+		}
+	}
+	if !opts.yes {
+		ok, err := confirmRun(deps)
+		if err != nil {
+			fmt.Fprintln(deps.Stderr, err)
+			return 2
+		}
+		if !ok {
+			fmt.Fprintln(deps.Stderr, "update run not confirmed")
+			return 1
+		}
+	}
+
+	summary, err := executor.Run(ctx, plan, executor.Options{
+		StateDir: deps.StateHome,
+		FailFast: opts.failFast,
+	})
+	if err != nil {
+		fmt.Fprintf(deps.Stderr, "run updates: %v\n", err)
+		return 1
+	}
+	if opts.json {
+		if err := output.WriteJSON(deps.Stdout, summary); err != nil {
+			fmt.Fprintf(deps.Stderr, "write json: %v\n", err)
+			return 1
+		}
+	} else if err := writeRunSummaryText(deps.Stdout, summary); err != nil {
+		fmt.Fprintf(deps.Stderr, "write summary: %v\n", err)
+		return 1
+	}
+	if summaryHasFailure(summary) {
 		return 1
 	}
 	return 0
@@ -265,9 +303,11 @@ func confirmAdd(name string, update profile.Command, deps Deps) (bool, error) {
 }
 
 type upOptions struct {
-	dryRun bool
-	json   bool
-	names  []string
+	dryRun   bool
+	json     bool
+	yes      bool
+	failFast bool
+	names    []string
 }
 
 func parseUpArgs(args []string, stderr io.Writer) (upOptions, bool) {
@@ -278,6 +318,10 @@ func parseUpArgs(args []string, stderr io.Writer) (upOptions, bool) {
 			opts.dryRun = true
 		case "--json":
 			opts.json = true
+		case "--yes":
+			opts.yes = true
+		case "--fail-fast":
+			opts.failFast = true
 		default:
 			if strings.HasPrefix(arg, "-") {
 				fmt.Fprintf(stderr, "unknown up option: %s\n", arg)
@@ -299,6 +343,51 @@ func buildPlan(deps Deps, names []string) (planner.Plan, []profile.Problem, erro
 	}
 	plan, problems := planner.Build(cfg, names, planner.Options{})
 	return plan, problems, nil
+}
+
+func confirmRun(deps Deps) (bool, error) {
+	if !deps.StdinIsTTY {
+		return false, errors.New("up requires --yes when stdin is non-interactive")
+	}
+	if deps.Stdin == nil {
+		return false, errors.New("stdin is not available for confirmation")
+	}
+	fmt.Fprint(deps.Stdout, "Run update plan? [y/N] ")
+	answer, err := bufio.NewReader(deps.Stdin).ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return false, fmt.Errorf("read confirmation: %w", err)
+	}
+	answer = strings.TrimSpace(strings.ToLower(answer))
+	return answer == "y" || answer == "yes", nil
+}
+
+func writeRunSummaryText(w io.Writer, summary runlog.Summary) error {
+	if _, err := fmt.Fprintln(w, "Summary"); err != nil {
+		return err
+	}
+	if len(summary.Results) == 0 {
+		_, err := fmt.Fprintln(w, "- no profiles selected")
+		return err
+	}
+	for _, result := range summary.Results {
+		line := fmt.Sprintf("- %s: %s", result.Name, result.Status)
+		if result.LogPath != "" {
+			line += " (" + result.LogPath + ")"
+		}
+		if _, err := fmt.Fprintln(w, line); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func summaryHasFailure(summary runlog.Summary) bool {
+	for _, result := range summary.Results {
+		if result.Status == "failed" {
+			return true
+		}
+	}
+	return false
 }
 
 func printProblems(problems []profile.Problem, w io.Writer) {

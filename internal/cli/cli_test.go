@@ -198,3 +198,81 @@ func TestUpDryRunJSONDoesNotCreateRunDir(t *testing.T) {
 		t.Fatalf("dry-run created runs dir or unexpected stat error: %v", err)
 	}
 }
+
+func TestUpRequiresYesWhenNonInteractive(t *testing.T) {
+	dir := t.TempDir()
+	configFile := filepath.Join(dir, "config.toml")
+	cfg := profile.Config{Tools: []profile.Profile{{
+		Name:      "echo",
+		Enabled:   true,
+		Confirmed: true,
+		Update:    profile.Command{Command: "echo", Args: []string{"update"}},
+	}}}
+	if err := profile.Save(configFile, cfg); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run(context.Background(), []string{"up"}, Deps{
+		Stdout:     &stdout,
+		Stderr:     &stderr,
+		ConfigHome: configFile,
+		StateHome:  filepath.Join(dir, "state"),
+	})
+	if code == 0 {
+		t.Fatal("up without --yes in non-interactive mode succeeded, want failure")
+	}
+	if !strings.Contains(stderr.String(), "--yes") {
+		t.Fatalf("stderr = %q, want --yes guidance", stderr.String())
+	}
+}
+
+func TestUpWithYesJSONWritesRunSummary(t *testing.T) {
+	dir := t.TempDir()
+	configFile := filepath.Join(dir, "config.toml")
+	stateDir := filepath.Join(dir, "state")
+	cfg := profile.Config{Tools: []profile.Profile{{
+		Name:      "echo",
+		Enabled:   true,
+		Confirmed: true,
+		Update:    profile.Command{Command: "echo", Args: []string{"update"}},
+	}}}
+	if err := profile.Save(configFile, cfg); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run(context.Background(), []string{"up", "--yes", "--json"}, Deps{
+		Stdout:     &stdout,
+		Stderr:     &stderr,
+		ConfigHome: configFile,
+		StateHome:  stateDir,
+	})
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr = %s", code, stderr.String())
+	}
+	var decoded struct {
+		RunID   string `json:"run_id"`
+		Results []struct {
+			Name    string `json:"name"`
+			Status  string `json:"status"`
+			LogPath string `json:"log_path"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &decoded); err != nil {
+		t.Fatalf("invalid json output %q: %v", stdout.String(), err)
+	}
+	if decoded.RunID == "" || len(decoded.Results) != 1 || decoded.Results[0].Status != "success" {
+		t.Fatalf("summary = %#v, want one successful result", decoded)
+	}
+	latest, err := os.ReadFile(filepath.Join(stateDir, "latest-run"))
+	if err != nil {
+		t.Fatalf("latest-run missing: %v", err)
+	}
+	if string(latest) != decoded.RunID {
+		t.Fatalf("latest-run = %q, want %q", latest, decoded.RunID)
+	}
+	if _, err := os.Stat(decoded.Results[0].LogPath); err != nil {
+		t.Fatalf("log path missing: %v", err)
+	}
+}
