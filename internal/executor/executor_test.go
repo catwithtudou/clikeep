@@ -1,13 +1,15 @@
 package executor
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 
-	"github.com/scott9/clikeep/internal/planner"
-	"github.com/scott9/clikeep/internal/profile"
+	"github.com/catwithtudou/clikeep/internal/planner"
+	"github.com/catwithtudou/clikeep/internal/profile"
 )
 
 func TestRunContinuesAfterFailure(t *testing.T) {
@@ -64,5 +66,31 @@ func TestRunFailFastSkipsRemainingItems(t *testing.T) {
 	}
 	if summary.Results[0].Status != "failed" || summary.Results[1].Status != "skipped" {
 		t.Fatalf("results = %#v", summary.Results)
+	}
+}
+
+func TestRunWritesProgressForRunningSuccessAndSkipped(t *testing.T) {
+	plan := planner.Plan{Items: []planner.Item{
+		{Name: "bad", Update: profile.Command{Command: "bad"}},
+		{Name: "skipped", Update: profile.Command{Command: "skipped"}},
+	}}
+	var progress bytes.Buffer
+
+	_, err := Run(context.Background(), plan, Options{
+		StateDir: t.TempDir(),
+		FailFast: true,
+		Progress: &progress,
+		RunCommand: func(ctx context.Context, cmd profile.Command) CommandResult {
+			return CommandResult{ExitCode: 1, Err: errors.New("failed")}
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := progress.String()
+	for _, want := range []string{"bad", "running", "failed", "skipped"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("progress = %q, missing %q", out, want)
+		}
 	}
 }

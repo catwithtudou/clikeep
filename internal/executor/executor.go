@@ -5,25 +5,30 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/scott9/clikeep/internal/planner"
-	"github.com/scott9/clikeep/internal/profile"
-	"github.com/scott9/clikeep/internal/runlog"
+	"github.com/catwithtudou/clikeep/internal/planner"
+	"github.com/catwithtudou/clikeep/internal/profile"
+	"github.com/catwithtudou/clikeep/internal/runlog"
 )
 
 const defaultTimeout = 10 * time.Minute
 
 type Options struct {
-	StateDir   string
-	FailFast   bool
-	Timeout    time.Duration
-	Now        func() time.Time
-	RunCommand func(context.Context, profile.Command) CommandResult
+	StateDir       string
+	FailFast       bool
+	Timeout        time.Duration
+	Now            func() time.Time
+	Stdout         io.Writer
+	Stderr         io.Writer
+	Progress       io.Writer
+	ProgressFormat func(current, total int, name, status string) string
+	RunCommand     func(context.Context, profile.Command) CommandResult
 }
 
 type CommandResult struct {
@@ -49,9 +54,10 @@ func Run(ctx context.Context, plan planner.Plan, opts Options) (runlog.Summary, 
 	}
 
 	failed := false
-	for _, item := range plan.Items {
+	for i, item := range plan.Items {
 		logPath := filepath.Join(runDir, logFileName(item.Name))
 		if opts.FailFast && failed {
+			writeProgress(opts.Progress, opts.ProgressFormat, i+1, len(plan.Items), item.Name, "skipped")
 			result := runlog.Result{
 				Name:    item.Name,
 				Status:  "skipped",
@@ -65,12 +71,14 @@ func Run(ctx context.Context, plan planner.Plan, opts Options) (runlog.Summary, 
 			continue
 		}
 
+		writeProgress(opts.Progress, opts.ProgressFormat, i+1, len(plan.Items), item.Name, "running")
 		commandResult := runCommand(ctx, item.Update, opts)
 		status := "success"
 		if commandResult.Err != nil || commandResult.ExitCode != 0 {
 			status = "failed"
 			failed = true
 		}
+		writeProgress(opts.Progress, opts.ProgressFormat, i+1, len(plan.Items), item.Name, status)
 		if err := writeLog(logPath, item, commandResult, status); err != nil {
 			return summary, err
 		}
@@ -107,7 +115,13 @@ func runCommand(ctx context.Context, cmd profile.Command, opts Options) CommandR
 	command := exec.CommandContext(cmdCtx, cmd.Command, cmd.Args...)
 	var stdout, stderr bytes.Buffer
 	command.Stdout = &stdout
+	if opts.Stdout != nil {
+		command.Stdout = io.MultiWriter(opts.Stdout, &stdout)
+	}
 	command.Stderr = &stderr
+	if opts.Stderr != nil {
+		command.Stderr = io.MultiWriter(opts.Stderr, &stderr)
+	}
 	err := command.Run()
 
 	exitCode := 0
@@ -154,6 +168,34 @@ func writeLog(path string, item planner.Item, result CommandResult, status strin
 		}
 	}
 	return os.WriteFile(path, buf.Bytes(), 0o644)
+}
+
+func writeProgress(w io.Writer, format func(current, total int, name, status string) string, current, total int, name, status string) {
+	if w == nil {
+		return
+	}
+	line := ""
+	if format != nil {
+		line = format(current, total, name, status)
+	} else {
+		line = fmt.Sprintf("  [%d/%d] %s  [%s] %s", current, total, name, progressBar(current, total), status)
+	}
+	fmt.Fprintln(w, line)
+}
+
+func progressBar(current, total int) string {
+	const width = 10
+	if total <= 0 {
+		return strings.Repeat(".", width)
+	}
+	done := current * width / total
+	if done < 1 {
+		done = 1
+	}
+	if done > width {
+		done = width
+	}
+	return strings.Repeat("#", done) + strings.Repeat(".", width-done)
 }
 
 func logFileName(name string) string {

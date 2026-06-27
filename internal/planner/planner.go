@@ -4,8 +4,8 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/scott9/clikeep/internal/paths"
-	"github.com/scott9/clikeep/internal/profile"
+	"github.com/catwithtudou/clikeep/internal/paths"
+	"github.com/catwithtudou/clikeep/internal/profile"
 )
 
 type Options struct {

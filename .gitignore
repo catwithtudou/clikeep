@@ -1,1 +1,7 @@
 .superpowers/
+
+# Internal planning and design docs. Keep these local unless explicitly curated
+# for a public release.
+docs/
+CONTEXT.md
+clikeep_cli_update_manager_proposal.md

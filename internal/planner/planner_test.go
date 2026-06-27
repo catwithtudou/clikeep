@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/scott9/clikeep/internal/profile"
+	"github.com/catwithtudou/clikeep/internal/profile"
 )
 
 func TestBuildSelectsEnabledConfirmedProfiles(t *testing.T) {

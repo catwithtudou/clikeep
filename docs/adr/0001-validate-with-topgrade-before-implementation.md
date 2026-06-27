@@ -1,3 +1,0 @@
-# Validate with Topgrade before implementation
-
-Before building a dedicated clikeep CLI, validate whether Topgrade custom commands already solve the initial need for updating known internal CLIs. This keeps clikeep from becoming a thin wrapper around existing command orchestration; implementation should start only if Topgrade falls short on at least one of the intended clikeep capability areas: confirmed CLI Update Profiles, status and logs, failure diagnosis, interactive selection, or frequent-CLI discovery. If the need is only to batch-run fixed update commands, Topgrade is enough for the first version.

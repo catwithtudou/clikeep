@@ -1,4 +1,4 @@
-module github.com/scott9/clikeep
+module github.com/catwithtudou/clikeep
 
 go 1.24.7
 

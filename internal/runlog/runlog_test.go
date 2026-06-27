@@ -11,9 +11,9 @@ func TestWriteSummaryWritesSummaryAndLatestPointer(t *testing.T) {
 	summary := Summary{
 		RunID: "2026-06-23T21-00-00",
 		Results: []Result{{
-			Name:    "lark-cli",
+			Name:    "demo-cli",
 			Status:  "success",
-			LogPath: filepath.Join(dir, "runs", "2026-06-23T21-00-00", "lark-cli.log"),
+			LogPath: filepath.Join(dir, "runs", "2026-06-23T21-00-00", "demo-cli.log"),
 		}},
 	}
 

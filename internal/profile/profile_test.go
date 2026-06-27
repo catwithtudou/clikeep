@@ -9,10 +9,10 @@ import (
 
 func TestValidateMinimumProfile(t *testing.T) {
 	cfg := Config{Tools: []Profile{{
-		Name:      "lark-cli",
+		Name:      "demo-cli",
 		Enabled:   true,
 		Confirmed: true,
-		Update:    Command{Command: "lark-cli", Args: []string{"update"}},
+		Update:    Command{Command: "demo-cli", Args: []string{"update"}},
 	}}}
 
 	problems := ValidateConfig(cfg)
@@ -24,16 +24,16 @@ func TestValidateMinimumProfile(t *testing.T) {
 func TestValidateDuplicateNames(t *testing.T) {
 	cfg := Config{Tools: []Profile{
 		{
-			Name:      "lark-cli",
+			Name:      "demo-cli",
 			Enabled:   true,
 			Confirmed: true,
-			Update:    Command{Command: "lark-cli", Args: []string{"update"}},
+			Update:    Command{Command: "demo-cli", Args: []string{"update"}},
 		},
 		{
-			Name:      "lark-cli",
+			Name:      "demo-cli",
 			Enabled:   true,
 			Confirmed: true,
-			Update:    Command{Command: "lark-cli", Args: []string{"update"}},
+			Update:    Command{Command: "demo-cli", Args: []string{"update"}},
 		},
 	}}
 
@@ -45,11 +45,11 @@ func TestValidateDuplicateNames(t *testing.T) {
 
 func TestValidateOptionalVersionCommand(t *testing.T) {
 	cfg := Config{Tools: []Profile{{
-		Name:      "lark-cli",
+		Name:      "demo-cli",
 		Enabled:   true,
 		Confirmed: true,
-		Update:    Command{Command: "lark-cli", Args: []string{"update"}},
-		Version:   &Command{Command: "lark-cli", Args: []string{"--version"}},
+		Update:    Command{Command: "demo-cli", Args: []string{"update"}},
+		Version:   &Command{Command: "demo-cli", Args: []string{"--version"}},
 	}}}
 
 	problems := ValidateConfig(cfg)
@@ -60,10 +60,10 @@ func TestValidateOptionalVersionCommand(t *testing.T) {
 
 func TestValidateRequiresUpdateArgs(t *testing.T) {
 	cfg := Config{Tools: []Profile{{
-		Name:      "lark-cli",
+		Name:      "demo-cli",
 		Enabled:   true,
 		Confirmed: true,
-		Update:    Command{Command: "lark-cli"},
+		Update:    Command{Command: "demo-cli"},
 	}}}
 
 	problems := ValidateConfig(cfg)
@@ -100,12 +100,12 @@ func TestValidateRejectsProfileEnv(t *testing.T) {
 	path := filepath.Join(dir, "config.toml")
 	data := []byte(`
 [[tools]]
-name = "lark-cli"
+name = "demo-cli"
 enabled = true
 confirmed = true
 
 [tools.update]
-command = "lark-cli"
+command = "demo-cli"
 args = ["update"]
 
 [tools.env]
@@ -127,15 +127,15 @@ FOO = "bar"
 
 func TestParseCommandRejectsShellComposition(t *testing.T) {
 	bad := []string{
-		"lark-cli update && echo done",
-		"lark-cli update | tee out",
-		"lark-cli update > out",
-		"lark-cli update < in",
-		"lark-cli update $(echo done)",
-		"lark-cli update `echo done`",
-		"sudo lark-cli update",
-		"sh -c 'lark-cli update'",
-		"bash -c 'lark-cli update'",
+		"demo-cli update && echo done",
+		"demo-cli update | tee out",
+		"demo-cli update > out",
+		"demo-cli update < in",
+		"demo-cli update $(echo done)",
+		"demo-cli update `echo done`",
+		"sudo demo-cli update",
+		"sh -c 'demo-cli update'",
+		"bash -c 'demo-cli update'",
 	}
 
 	for _, input := range bad {
@@ -150,13 +150,13 @@ func TestLoadAndSaveRoundTrip(t *testing.T) {
 	path := filepath.Join(dir, "config.toml")
 
 	want := Config{Tools: []Profile{{
-		Name:      "lark-cli",
+		Name:      "demo-cli",
 		Enabled:   true,
 		Confirmed: true,
-		Aliases:   []string{"lc"},
-		Tags:      []string{"internal"},
-		Update:    Command{Command: "lark-cli", Args: []string{"update"}},
-		Version:   &Command{Command: "lark-cli", Args: []string{"--version"}},
+		Aliases:   []string{"demo"},
+		Tags:      []string{"sample"},
+		Update:    Command{Command: "demo-cli", Args: []string{"update"}},
+		Version:   &Command{Command: "demo-cli", Args: []string{"--version"}},
 	}}}
 
 	if err := Save(path, want); err != nil {
