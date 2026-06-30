@@ -508,6 +508,63 @@ func TestUpdateAliasDryRunUsesUpBehavior(t *testing.T) {
 	}
 }
 
+func TestParseUpArgsAcceptsJobs(t *testing.T) {
+	var stderr bytes.Buffer
+	opts, ok := parseUpArgs([]string{"--yes", "--jobs", "3", "echo"}, &stderr)
+	if !ok {
+		t.Fatalf("parseUpArgs failed: %s", stderr.String())
+	}
+	if opts.jobs != 3 {
+		t.Fatalf("jobs = %d, want 3", opts.jobs)
+	}
+	if len(opts.names) != 1 || opts.names[0] != "echo" {
+		t.Fatalf("names = %#v, want echo", opts.names)
+	}
+}
+
+func TestParseUpArgsDefaultsToAutoJobs(t *testing.T) {
+	var stderr bytes.Buffer
+	opts, ok := parseUpArgs([]string{"--yes"}, &stderr)
+	if !ok {
+		t.Fatalf("parseUpArgs failed: %s", stderr.String())
+	}
+	if opts.jobs != 0 {
+		t.Fatalf("jobs = %d, want auto", opts.jobs)
+	}
+}
+
+func TestParseUpArgsAcceptsSequential(t *testing.T) {
+	var stderr bytes.Buffer
+	opts, ok := parseUpArgs([]string{"--yes", "--sequential"}, &stderr)
+	if !ok {
+		t.Fatalf("parseUpArgs failed: %s", stderr.String())
+	}
+	if opts.jobs != 1 {
+		t.Fatalf("jobs = %d, want sequential jobs=1", opts.jobs)
+	}
+}
+
+func TestParseUpArgsRejectsInvalidJobs(t *testing.T) {
+	cases := [][]string{
+		{"--jobs"},
+		{"--jobs", "0"},
+		{"--jobs", "many"},
+		{"--jobs=-1"},
+	}
+
+	for _, args := range cases {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			var stderr bytes.Buffer
+			if _, ok := parseUpArgs(args, &stderr); ok {
+				t.Fatalf("parseUpArgs(%#v) succeeded, want failure", args)
+			}
+			if !strings.Contains(stderr.String(), "--jobs") {
+				t.Fatalf("stderr = %q, want --jobs guidance", stderr.String())
+			}
+		})
+	}
+}
+
 func TestUpRequiresYesWhenNonInteractive(t *testing.T) {
 	dir := t.TempDir()
 	configFile := filepath.Join(dir, "config.toml")
@@ -615,8 +672,9 @@ func TestUpWithYesTextUsesStagedOutput(t *testing.T) {
 		"  1. echo",
 		"     command: echo update",
 		"Run",
-		"  [1/1] echo  [##########] running",
-		"  [1/1] echo  [##########] success",
+		"  mode: sequential  jobs: 1  profiles: 1",
+		"  running [1/1] echo",
+		"  success [1/1] echo",
 		"Summary",
 		"  success: 1  failed: 0  skipped: 0",
 		"  success  echo",
@@ -627,6 +685,97 @@ func TestUpWithYesTextUsesStagedOutput(t *testing.T) {
 	}
 	if strings.Contains(out, ".log") {
 		t.Fatalf("output = %q, summary should not show log paths for successful runs", out)
+	}
+}
+
+func TestUpWithYesTextShowsParallelDefault(t *testing.T) {
+	dir := t.TempDir()
+	configFile := filepath.Join(dir, "config.toml")
+	cfg := profile.Config{Tools: []profile.Profile{
+		{
+			Name:      "one",
+			Enabled:   true,
+			Confirmed: true,
+			Update:    profile.Command{Command: "echo", Args: []string{"one"}},
+		},
+		{
+			Name:      "two",
+			Enabled:   true,
+			Confirmed: true,
+			Update:    profile.Command{Command: "echo", Args: []string{"two"}},
+		},
+	}}
+	if err := profile.Save(configFile, cfg); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run(context.Background(), []string{"up", "--yes"}, Deps{
+		Stdout:     &stdout,
+		Stderr:     &stderr,
+		ConfigHome: configFile,
+		StateHome:  filepath.Join(dir, "state"),
+	})
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr = %s", code, stderr.String())
+	}
+	out := stdout.String()
+	for _, want := range []string{
+		"  mode: parallel  jobs: 2  profiles: 2",
+		"  success: 2  failed: 0  skipped: 0",
+		"  success  one",
+		"  success  two",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output = %q, missing %q", out, want)
+		}
+	}
+	if strings.Contains(out, "\none\n") || strings.Contains(out, "\ntwo\n") {
+		t.Fatalf("output = %q, command stdout should stay in logs", out)
+	}
+}
+
+func TestUpWithFailFastUsesSequentialAutoJobs(t *testing.T) {
+	dir := t.TempDir()
+	configFile := filepath.Join(dir, "config.toml")
+	cfg := profile.Config{Tools: []profile.Profile{
+		{
+			Name:      "bad",
+			Enabled:   true,
+			Confirmed: true,
+			Update:    profile.Command{Command: "false", Args: []string{"x"}},
+		},
+		{
+			Name:      "skipped",
+			Enabled:   true,
+			Confirmed: true,
+			Update:    profile.Command{Command: "echo", Args: []string{"skipped"}},
+		},
+	}}
+	if err := profile.Save(configFile, cfg); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run(context.Background(), []string{"up", "--yes", "--fail-fast"}, Deps{
+		Stdout:     &stdout,
+		Stderr:     &stderr,
+		ConfigHome: configFile,
+		StateHome:  filepath.Join(dir, "state"),
+	})
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1; stderr = %s", code, stderr.String())
+	}
+	out := stdout.String()
+	for _, want := range []string{
+		"  mode: sequential  jobs: 1  profiles: 2",
+		"  fail-fast: stop starting new profiles after first failure",
+		"  failed   bad",
+		"  skipped  skipped",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output = %q, missing %q", out, want)
+		}
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/catwithtudou/clikeep/internal/executor"
@@ -117,7 +118,7 @@ func printCommandHelp(w io.Writer, command string) {
 	case "add":
 		fmt.Fprintln(w, "usage: clikeep add <name> --update <command> [--version <command>] [--yes]")
 	case "update", "up":
-		fmt.Fprintln(w, "usage: clikeep update [profile...] [--dry-run] [--yes] [--fail-fast] [--json] [--no-color]")
+		fmt.Fprintln(w, "usage: clikeep update [profile...] [--dry-run] [--yes] [--fail-fast] [--jobs <n>] [--sequential] [--json] [--no-color]")
 	case "status":
 		fmt.Fprintln(w, "usage: clikeep status [name] [--no-color]")
 	case "self-update", "self-upgrade":
@@ -371,15 +372,18 @@ func runUp(ctx context.Context, args []string, deps Deps) int {
 	}
 	if !opts.json {
 		fmt.Fprintln(deps.Stdout, style.Heading("Run"))
+		if err := writeRunModeText(deps.Stdout, plan, opts.jobs, opts.failFast); err != nil {
+			fmt.Fprintf(deps.Stderr, "write run mode: %v\n", err)
+			return 1
+		}
 	}
 
 	runOpts := executor.Options{
 		StateDir: deps.StateHome,
 		FailFast: opts.failFast,
+		Jobs:     opts.jobs,
 	}
 	if !opts.json {
-		runOpts.Stdout = deps.Stdout
-		runOpts.Stderr = deps.Stderr
 		runOpts.Progress = deps.Stdout
 		runOpts.ProgressFormat = func(current, total int, name, status string) string {
 			return output.ProgressLine(style, current, total, name, status)
@@ -628,6 +632,39 @@ func writeDoctorText(w io.Writer, problems []profile.Problem, style output.Style
 	return nil
 }
 
+func writeRunModeText(w io.Writer, plan planner.Plan, jobs int, failFast bool) error {
+	total := len(plan.Items)
+	effectiveJobs := effectiveJobCount(total, jobs, failFast)
+	mode := "parallel"
+	if effectiveJobs <= 1 {
+		mode = "sequential"
+	}
+	if total == 0 {
+		mode = "none"
+	}
+	if _, err := fmt.Fprintf(w, "  mode: %s  jobs: %d  profiles: %d\n", mode, effectiveJobs, total); err != nil {
+		return err
+	}
+	if failFast && total > 0 {
+		_, err := fmt.Fprintln(w, "  fail-fast: stop starting new profiles after first failure")
+		return err
+	}
+	return nil
+}
+
+func effectiveJobCount(total, requested int, failFast bool) int {
+	if total <= 0 {
+		return 0
+	}
+	if requested <= 0 && failFast {
+		return 1
+	}
+	if requested <= 0 || requested > total {
+		return total
+	}
+	return requested
+}
+
 func filterDoctorProblems(problems []profile.Problem, category string) []profile.Problem {
 	var filtered []profile.Problem
 	for _, problem := range problems {
@@ -738,13 +775,15 @@ type upOptions struct {
 	json     bool
 	yes      bool
 	failFast bool
+	jobs     int
 	noColor  bool
 	names    []string
 }
 
 func parseUpArgs(args []string, stderr io.Writer) (upOptions, bool) {
 	var opts upOptions
-	for _, arg := range args {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
 		switch arg {
 		case "--dry-run":
 			opts.dryRun = true
@@ -756,7 +795,28 @@ func parseUpArgs(args []string, stderr io.Writer) (upOptions, bool) {
 			opts.yes = true
 		case "--fail-fast":
 			opts.failFast = true
+		case "--sequential":
+			opts.jobs = 1
+		case "--jobs":
+			i++
+			if i >= len(args) || args[i] == "" {
+				fmt.Fprintln(stderr, "--jobs requires a positive integer")
+				return upOptions{}, false
+			}
+			jobs, ok := parseJobs(args[i], stderr)
+			if !ok {
+				return upOptions{}, false
+			}
+			opts.jobs = jobs
 		default:
+			if strings.HasPrefix(arg, "--jobs=") {
+				jobs, ok := parseJobs(strings.TrimPrefix(arg, "--jobs="), stderr)
+				if !ok {
+					return upOptions{}, false
+				}
+				opts.jobs = jobs
+				continue
+			}
 			if strings.HasPrefix(arg, "-") {
 				fmt.Fprintf(stderr, "unknown update option: %s\n", arg)
 				return upOptions{}, false
@@ -765,6 +825,15 @@ func parseUpArgs(args []string, stderr io.Writer) (upOptions, bool) {
 		}
 	}
 	return opts, true
+}
+
+func parseJobs(value string, stderr io.Writer) (int, bool) {
+	jobs, err := strconv.Atoi(value)
+	if err != nil || jobs < 1 {
+		fmt.Fprintln(stderr, "--jobs requires a positive integer")
+		return 0, false
+	}
+	return jobs, true
 }
 
 func buildPlan(deps Deps, names []string) (planner.Plan, []profile.Problem, error) {

@@ -16,7 +16,7 @@ Preview v0.1 focuses on this workflow:
 
 - keep named update profiles in one local config file
 - preview the update plan before running it
-- run each update command sequentially
+- run update commands concurrently by default
 - keep per-tool logs for troubleshooting
 - report latest status and basic doctor checks
 
@@ -71,6 +71,8 @@ non-interactive environments, pass `--yes`:
 
 ```bash
 clikeep update --yes
+clikeep update --yes --jobs 3
+clikeep update --yes --sequential
 ```
 
 ## Commands
@@ -80,7 +82,7 @@ clikeep update --yes
 | `clikeep init` | Create local config and state directories. |
 | `clikeep add <name> --update "<command args>" [--version "<command args>"] [--yes]` | Add a confirmed update profile. |
 | `clikeep list` | Show configured profiles in a readable table. |
-| `clikeep update [profile...] [--dry-run] [--yes] [--fail-fast] [--json] [--no-color]` | Plan and run profile update commands. |
+| `clikeep update [profile...] [--dry-run] [--yes] [--fail-fast] [--jobs <n>] [--sequential] [--json] [--no-color]` | Plan and run profile update commands. |
 | `clikeep up` | Short alias for `clikeep update`. |
 | `clikeep status [profile]` | Show latest known run status for profiles. |
 | `clikeep doctor` | Check config, command paths, and latest run state. |
@@ -113,6 +115,19 @@ clikeep update --json --yes
 Successful update summaries stay concise. Failure summaries include the log path
 and a short tail so the terminal has enough context without forcing you to open a
 summary file.
+
+`clikeep update` runs eligible profile update commands concurrently by default.
+Use `--jobs <n>` to cap concurrency, or `--jobs 1` / `--sequential` when a
+toolchain needs serialized updates.
+
+Text output is staged for concurrent runs: plan, run mode, status lines, then a
+concise summary in plan order. Command stdout and stderr are captured in
+per-profile logs; failed summaries include the log path and a short tail.
+
+With `--fail-fast`, automatic concurrency falls back to sequential execution so
+the first failure can stop later profiles. When `--fail-fast` is combined with an
+explicit `--jobs <n>`, commands already running are allowed to finish, and
+profiles that have not started are marked as skipped after the first failure.
 
 ## Updating clikeep
 

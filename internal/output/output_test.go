@@ -56,9 +56,12 @@ func TestWritePlanTextUsesANSIWhenColorEnabled(t *testing.T) {
 
 func TestProgressLineColorsStatus(t *testing.T) {
 	line := ProgressLine(NewStyle(true), 1, 2, "demo-cli", "success")
-	for _, want := range []string{"[1/2]", "[#####.....]", "demo-cli", "\x1b[32msuccess\x1b[0m"} {
+	for _, want := range []string{"[1/2]", "demo-cli", "\x1b[32msuccess\x1b[0m"} {
 		if !strings.Contains(line, want) {
 			t.Fatalf("line = %q, missing %q", line, want)
 		}
+	}
+	if strings.Contains(line, "#####") {
+		t.Fatalf("line = %q, want status-first progress without a sequential bar", line)
 	}
 }

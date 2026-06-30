@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/catwithtudou/clikeep/internal/planner"
 	"github.com/catwithtudou/clikeep/internal/profile"
@@ -91,22 +90,7 @@ func (s Style) wrap(code, text string) string {
 }
 
 func ProgressLine(style Style, current, total int, name, status string) string {
-	return fmt.Sprintf("  [%d/%d] %s  [%s] %s", current, total, name, progressBar(current, total), style.Status(status))
-}
-
-func progressBar(current, total int) string {
-	const width = 10
-	if total <= 0 {
-		return strings.Repeat(".", width)
-	}
-	done := current * width / total
-	if done < 1 {
-		done = 1
-	}
-	if done > width {
-		done = width
-	}
-	return strings.Repeat("#", done) + strings.Repeat(".", width-done)
+	return fmt.Sprintf("  %-7s [%d/%d] %s", style.Status(status), current, total, name)
 }
 
 func WriteJSON(w io.Writer, value any) error {
