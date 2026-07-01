@@ -56,8 +56,11 @@ The bootstrap script verifies `clikeep version` after install and initializes co
    - `clikeep update`
    - `clikeep update <profile>`
    - Use `--yes` only when the user explicitly authorized non-interactive execution.
+   - For multiple profiles, expect default concurrent execution. Use `--sequential` when the user wants serialized updates, and use `--jobs <n>` only when the user asks for a specific concurrency cap.
+   - Use `--fail-fast` when the user wants to stop starting later profiles after the first failure.
 5. Triage results:
    - Summarize successes and failures from terminal output.
+   - Include the reported run mode when it matters, especially `parallel`, `sequential`, `jobs`, `failed`, or `skipped`.
    - On failure, run `clikeep status <profile>` or `clikeep status`, read the log path, and inspect only the relevant tail.
 
 ## Safety Rules
