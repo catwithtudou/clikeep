@@ -1,0 +1,7 @@
+interface:
+  display_name: "Clikeep"
+  short_description: "Bootstrap and run trusted CLI updates"
+  default_prompt: "Use $clikeep to check setup, dry-run my configured CLI updates, and summarize the plan."
+
+policy:
+  allow_implicit_invocation: true

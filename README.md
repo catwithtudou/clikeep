@@ -51,6 +51,27 @@ go install github.com/catwithtudou/clikeep/cmd/clikeep@v0.1.0
 Preview releases are not a stable API promise. Profile config and command
 behavior are intended to stay compatible where practical.
 
+## Use With Agent Skills
+
+Install the Clikeep agent skill from this repository:
+
+```bash
+npx -y skills@latest add catwithtudou/clikeep
+```
+
+After the skill is installed, you can ask an agent to inspect profiles, preview
+updates, run confirmed updates, and triage failures through clikeep. On first
+use, the skill checks whether the `clikeep` CLI is available. If it is missing,
+the agent can install it with Go after one explicit confirmation:
+
+```bash
+go install github.com/catwithtudou/clikeep/cmd/clikeep@latest
+```
+
+The skill does not silently install local binaries, edit shell startup files, or
+guess update commands for tools. It uses `clikeep update --dry-run` as the safe
+first move before real updates.
+
 ## Quick Start
 
 ```bash
@@ -174,6 +195,8 @@ For a Preview v0.1 release:
 
 ```bash
 gofmt -w cmd internal
+python3 scripts/validate_skills.py skills
+npx -y --registry=https://registry.npmjs.org skills@latest add ./ --list
 go test ./...
 go vet ./...
 git ls-files docs CONTEXT.md clikeep_cli_update_manager_proposal.md
