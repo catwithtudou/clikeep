@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## v0.2.0 Preview
+
+- Added an installable Clikeep agent skill package with setup checks, explicit install confirmation, safe dry-run guidance, and skill validation coverage.
 - Changed `clikeep update` to run profile updates concurrently by default, with `--jobs <n>` and `--sequential` for explicit concurrency control.
 - Kept `--fail-fast` sequential by default so later profiles are not started after the first failure.
 - Refined update run output for concurrent execution with run mode metadata and status-first progress lines.

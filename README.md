@@ -9,16 +9,17 @@ documented below.
 
 ## Status
 
-`v0.1.0` is a Preview release. It is intended to be usable for explicit,
+`v0.2.0` is a Preview release. It is intended to be usable for explicit,
 profile-based local CLI updates, while keeping the scope deliberately small.
 
-Preview v0.1 focuses on this workflow:
+Preview v0.2 focuses on this workflow:
 
 - keep named update profiles in one local config file
 - preview the update plan before running it
 - run update commands concurrently by default
 - keep per-tool logs for troubleshooting
 - report latest status and basic doctor checks
+- install an agent skill that can bootstrap and run the same safe workflow
 
 It does not try to replace a package manager, discover tools automatically, or
 manage package-manager sources.
@@ -45,7 +46,7 @@ go install github.com/catwithtudou/clikeep/cmd/clikeep@latest
 For a specific release:
 
 ```bash
-go install github.com/catwithtudou/clikeep/cmd/clikeep@v0.1.0
+go install github.com/catwithtudou/clikeep/cmd/clikeep@v0.2.0
 ```
 
 Preview releases are not a stable API promise. Profile config and command
@@ -121,7 +122,7 @@ clikeep follows XDG paths:
 
 Profiles are explicit. clikeep does not auto-discover tools, infer update
 commands, run through a shell, or support per-profile environment variables in
-Preview v0.1.
+Preview v0.2.
 
 ## Output
 
@@ -167,13 +168,13 @@ This runs:
 go install github.com/catwithtudou/clikeep/cmd/clikeep@latest
 ```
 
-Use `clikeep self-update --version v0.1.0` for a specific tag. In
+Use `clikeep self-update --version v0.2.0` for a specific tag. In
 non-interactive environments, pass `--yes`.
 
 `clikeep version` uses the Go module version for binaries installed with
 `go install ...@<version>`. Local development builds may show `dev` or a Go VCS
 pseudo-version; custom release builds can still inject a fixed label with
-`-ldflags "-X main.version=v0.1.0"`.
+`-ldflags "-X main.version=v0.2.0"`.
 
 ## Safety Boundary
 
@@ -191,7 +192,7 @@ together.
 
 ## Release Checklist
 
-For a Preview v0.1 release:
+For a Preview v0.2 release:
 
 ```bash
 gofmt -w cmd internal
@@ -202,5 +203,5 @@ go vet ./...
 git ls-files docs CONTEXT.md clikeep_cli_update_manager_proposal.md
 ```
 
-After the public branch is clean, tag `v0.1.0` and create a GitHub Release with
+After the public branch is clean, tag `v0.2.0` and create a GitHub Release with
 notes that clearly mark it as a Preview.
